@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Wildfire Home Defense Zone Report</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --fire:     #E8450A;
+    --amber:    #F5A623;
+    --safe:     #2ECC71;
+    --warn:     #F39C12;
+    --danger:   #E74C3C;
+    --ink:      #1A1A1A;
+    --muted:    #6B6B6B;
+    --rule:     #E0E0E0;
+    --bg:       #F7F5F2;
+    --white:    #FFFFFF;
+    --panel:    #F0EDE8;
+    --mono:     'IBM Plex Mono', monospace;
+    --sans:     'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* ── TOOLBAR ── */
+  #toolbar {
+    background: var(--ink);
+    color: var(--white);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  #toolbar .brand {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--amber);
+    white-space: nowrap;
+  }
+  #toolbar .controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  #toolbar label {
+    font-size: 11px;
+    color: rgba(255,255,255,0.6);
+    white-space: nowrap;
+  }
+  #objectIdInput {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: var(--white);
+    padding: 5px 10px;
+    border-radius: 3px;
+    width: 90px;
+    outline: none;
+  }
+  #objectIdInput:focus { border-color: var(--amber); }
+  #loadBtn, #printBtn {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: none;
+    border-radius: 3px;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    white-space: nowrap;
+  }
+  #loadBtn  { background: var(--amber); color: var(--ink); }
+  #printBtn { background: var(--fire);  color: var(--white); }
+  #loadBtn:hover, #printBtn:hover { opacity: 0.85; }
+  #loadBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  #statusMsg {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    font-family: var(--mono);
+    min-width: 120px;
+  }
+
+  /* ── REPORT SHELL ── */
+  #report {
+    display: none;
+    max-width: 900px;
+    margin: 20px auto;
+    padding: 0 16px 40px;
+  }
+  #report.visible { display: block; }
+
+  /* ── REPORT HEADER ── */
+  .rpt-header {
+    background: var(--ink);
+    color: var(--white);
+    padding: 24px 28px 20px;
+    border-radius: 4px 4px 0 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .rpt-header::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--fire), var(--amber));
+  }
+  .rpt-eyebrow {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 6px;
+  }
+  .rpt-address {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: 4px;
+  }
+  .rpt-meta {
+    font-size: 12px;
+    color: rgba(255,255,255,0.5);
+    font-family: var(--mono);
+  }
+  .rpt-badges {
+    margin-top: 14px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 2px;
+  }
+  .badge-fire  { background: rgba(232,69,10,0.25);  color: #FF7A50; border: 1px solid rgba(232,69,10,0.5); }
+  .badge-safe  { background: rgba(46,204,113,0.2);  color: #5DE898; border: 1px solid rgba(46,204,113,0.4); }
+  .badge-warn  { background: rgba(243,156,18,0.2);  color: #F5C148; border: 1px solid rgba(243,156,18,0.4); }
+  .badge-info  { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); border: 1px solid rgba(255,255,255,0.2); }
+
+  /* ── MAP PANEL ── */
+  .rpt-map-wrap {
+    background: #2a2a2a;
+    height: 280px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .rpt-map-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .map-loading {
+    color: rgba(255,255,255,0.4);
+    font-family: var(--mono);
+    font-size: 12px;
+    text-align: center;
+  }
+  .map-label {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: rgba(0,0,0,0.65);
+    color: rgba(255,255,255,0.75);
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 4px 8px;
+    border-radius: 2px;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── CONTENT GRID ── */
+  .rpt-body {
+    background: var(--white);
+    border-radius: 0 0 4px 4px;
+    border: 1px solid var(--rule);
+    border-top: none;
+  }
+
+  .section {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .section:last-child { border-bottom: none; }
+
+  .section-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+  }
+
+  /* Two-col grid for data fields */
+  .field-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 24px;
+  }
+  .field-grid.three-col { grid-template-columns: 1fr 1fr 1fr; }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .field-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .field-value {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .field-value.large {
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .field-value.mono { font-family: var(--mono); }
+
+  /* ── VEGETATION ZONE TABLE ── */
+  .veg-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .veg-table th {
+    background: var(--panel);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 2px solid var(--rule);
+  }
+  .veg-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--rule);
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .veg-table tr:last-child td { border-bottom: none; }
+  .veg-table td:first-child { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+
+  .pill {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 10px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+  }
+  .pill-0    { background: #e8f5e9; color: #2E7D32; }
+  .pill-low  { background: #fff8e1; color: #F57F17; }
+  .pill-med  { background: #fff3e0; color: #E65100; }
+  .pill-high { background: #ffebee; color: #B71C1C; }
+
+  /* ── EVAC ROW ── */
+  .evac-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: #fff8f5;
+    border: 1px solid #ffd5c2;
+    border-radius: 4px;
+    padding: 14px 18px;
+  }
+  .evac-icon {
+    font-size: 28px;
+    flex-shrink: 0;
+  }
+  .evac-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--fire);
+    margin-bottom: 2px;
+  }
+  .evac-value {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: -0.02em;
+  }
+  .evac-note {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* ── FOOTER ── */
+  .rpt-footer {
+    margin-top: 12px;
+    padding: 0 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .rpt-footer span {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+
+  /* ── EMPTY STATE ── */
+  #emptyState {
+    max-width: 900px;
+    margin: 60px auto;
+    padding: 0 16px;
+    text-align: center;
+  }
+  .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.4; }
+  .empty-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 6px;
+  }
+  .empty-sub {
+    font-size: 13px;
+    color: var(--muted);
+    max-width: 360px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  /* ── PRINT STYLES ── */
+  @media print {
+    @page { size: letter; margin: 0.5in; }
+    body { background: white; font-size: 11px; }
+    #toolbar { display: none !important; }
+    #emptyState { display: none !important; }
+    #report { display: block !important; max-width: 100%; margin: 0; padding: 0; }
+    .rpt-header { border-radius: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .rpt-map-wrap { height: 220px; }
+    .badge, .pill, .evac-row, .section-title, .veg-table th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .rpt-footer { margin-top: 8px; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── TOOLBAR ── -->
+<div id="toolbar">
+  <span class="brand">🔥 SanBern Wildfire Defense · Property Report</span>
+  <div class="controls">
+    <label for="objectIdInput">OBJECTID</label>
+    <input type="number" id="objectIdInput" placeholder="e.g. 42" min="1"/>
+    <button id="loadBtn" onclick="loadReport()">Load Feature</button>
+    <span id="statusMsg"></span>
+    <button id="printBtn" onclick="window.print()" style="display:none" id="printBtn">⬇ Export PDF</button>
+  </div>
+</div>
+
+<!-- ── EMPTY STATE ── -->
+<div id="emptyState">
+  <div class="empty-icon">🏠</div>
+  <div class="empty-title">Enter an OBJECTID to generate a report</div>
+  <div class="empty-sub">Enter the OBJECTID of a building footprint feature from the San Bernardino Wildfire Home Defense Zone layer, then click <strong>Load Feature</strong>.</div>
+</div>
+
+<!-- ── REPORT (populated by JS) ── -->
+<div id="report">
+  <div class="rpt-header">
+    <div class="rpt-eyebrow">San Bernardino County · Wildfire Home Defense Zone Report</div>
+    <div class="rpt-address" id="rptAddress">—</div>
+    <div class="rpt-meta" id="rptMeta">—</div>
+    <div class="rpt-badges" id="rptBadges"></div>
+  </div>
+
+  <div class="rpt-map-wrap" id="rptMapWrap">
+    <div class="map-loading">Map image loading…</div>
+    <div class="map-label" id="mapLabel"></div>
+  </div>
+
+  <div class="rpt-body">
+
+    <!-- PROPERTY -->
+    <div class="section">
+      <div class="section-title">Property &amp; Parcel</div>
+      <div class="field-grid">
+        <div class="field">
+          <span class="field-label">Parcel Number</span>
+          <span class="field-value mono" id="fParcel">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Land Type</span>
+          <span class="field-value" id="fLandType">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Acreage</span>
+          <span class="field-value" id="fAcreage">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Land Slope</span>
+          <span class="field-value" id="fSlope">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Land Value</span>
+          <span class="field-value" id="fLandVal">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Improvement Value</span>
+          <span class="field-value" id="fImprVal">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- STRUCTURE -->
+    <div class="section">
+      <div class="section-title">Structure Details</div>
+      <div class="field-grid three-col">
+        <div class="field">
+          <span class="field-label">Total Sq Ft</span>
+          <span class="field-value large" id="fSqFt">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Year Built</span>
+          <span class="field-value large mono" id="fYear">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Stories</span>
+          <span class="field-value large" id="fStories">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Bedrooms</span>
+          <span class="field-value" id="fBeds">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Bathrooms</span>
+          <span class="field-value" id="fBaths">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Basement</span>
+          <span class="field-value" id="fBasement">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Floor 2 Sq Ft</span>
+          <span class="field-value" id="fFloor2">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Floor 3 Sq Ft</span>
+          <span class="field-value" id="fFloor3">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Basement Sq Ft</span>
+          <span class="field-value" id="fBsmtSqFt">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Construction Type</span>
+          <span class="field-value" id="fConst">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Roof Type</span>
+          <span class="field-value" id="fRoof">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Swimming Pool</span>
+          <span class="field-value" id="fPool">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Height (ft)</span>
+          <span class="field-value" id="fHeight">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Elevation (ft)</span>
+          <span class="field-value" id="fElev">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Footprint Area (sq ft)</span>
+          <span class="field-value" id="fArea">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- UTILITIES -->
+    <div class="section">
+      <div class="section-title">Utilities &amp; Infrastructure</div>
+      <div class="field-grid">
+        <div class="field">
+          <span class="field-label">Water Source</span>
+          <span class="field-value" id="fWater">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Electric Source</span>
+          <span class="field-value" id="fElectric">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Natural Gas Source</span>
+          <span class="field-value" id="fGas">—</span>
+        </div>
+        <div class="field">
+          <span class="field-label">Fire Hazard Nuisance</span>
+          <span class="field-value" id="fFireHaz">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- EVACUATION -->
+    <div class="section">
+      <div class="section-title">Evacuation</div>
+      <div class="evac-row">
+        <div class="evac-icon">🚗</div>
+        <div>
+          <div class="evac-label">Estimated Evacuation Time</div>
+          <div class="evac-value" id="fEvac">— min</div>
+          <div class="evac-note">Modeled estimate from building footprint centroid to nearest safe egress route</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VEGETATION ZONES -->
+    <div class="section">
+      <div class="section-title">Defensible Space — Vegetation Density by Zone</div>
+      <table class="veg-table">
+        <thead>
+          <tr>
+            <th>Zone</th>
+            <th>Short Vegetation</th>
+            <th>Medium Vegetation</th>
+            <th>High Vegetation</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>0–5 ft</td>
+            <td id="vShort5">—</td>
+            <td id="vMed5">—</td>
+            <td id="vHigh5">—</td>
+          </tr>
+          <tr>
+            <td>0–30 ft</td>
+            <td id="vShort30">—</td>
+            <td id="vMed30">—</td>
+            <td id="vHigh30">—</td>
+          </tr>
+          <tr>
+            <td>0–100 ft</td>
+            <td id="vShort100">—</td>
+            <td id="vMed100">—</td>
+            <td id="vHigh100">—</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="font-size:11px;color:#888;margin-top:10px;font-family:'IBM Plex Mono',monospace;">
+        Values represent pixel counts of classified vegetation within each defensible space ring. Higher values indicate greater vegetative fuel load.
+      </p>
+    </div>
+
+  </div><!-- /rpt-body -->
+
+  <div class="rpt-footer">
+    <span id="rptGenerated">—</span>
+    <span>San Bernardino County · Xentity Corporation</span>
+  </div>
+</div><!-- /report -->
+
+<script>
+  const FEATURE_SERVICE = 'https://services6.arcgis.com/BStAUXLYRr0TgXhT/arcgis/rest/services/BuildingFootprints_SanBernCounty_Wildfire3Zones/FeatureServer/2';
+
+  // AGOL print service (standard Esri hosted print)
+  const PRINT_SERVICE = 'https://utility.arcgisonline.com/arcgis/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute';
+
+  // The web map item ID you shared
+  const WEBMAP_ID = 'b9237fab4da4484d9c19710f4ddc0937';
+
+  function val(v, suffix='', decimals=null) {
+    if (v === null || v === undefined || v === '' || v === 'null') return '<span style="color:#bbb">N/A</span>';
+    if (decimals !== null && !isNaN(v)) return Number(v).toFixed(decimals) + suffix;
+    return v + suffix;
+  }
+
+  function fmt(v) { return val(v); }
+  function fmtNum(v, d=0) { return val(v, '', d); }
+  function fmtAcre(v) { return val(v, ' ac', 2); }
+  function fmtSqFt(v) { if (!v || v==='null') return '<span style="color:#bbb">N/A</span>'; return Number(v).toLocaleString() + ' sq ft'; }
+  function fmtCurrency(v) {
+    if (!v || v==='null') return '<span style="color:#bbb">N/A</span>';
+    // Strip commas before parsing — REST returns "134,763" as a string
+    const n = Number(String(v).replace(/,/g, ''));
+    if (isNaN(n)) return '<span style="color:#bbb">N/A</span>';
+    return '$' + n.toLocaleString();
+  }
+
+  function vegPill(count) {
+    if (count === null || count === undefined) return '<span class="pill pill-0">N/A</span>';
+    const n = Number(count);
+    if (n === 0)       return `<span class="pill pill-0">0</span>`;
+    if (n < 50)        return `<span class="pill pill-low">${n}</span>`;
+    if (n < 200)       return `<span class="pill pill-med">${n}</span>`;
+    return             `<span class="pill pill-high">${n}</span>`;
+  }
+
+  function fireHazBadge(v) {
+    if (!v || v === 'null') return '';
+    const upper = String(v).toUpperCase();
+    if (upper === 'YES' || upper === 'Y' || upper === 'TRUE' || upper === '1')
+      return '<span class="badge badge-fire">⚠ Fire Hazard</span>';
+    return '<span class="badge badge-safe">✓ No Fire Hazard</span>';
+  }
+
+  function setStatus(msg, color='rgba(255,255,255,0.5)') {
+    const el = document.getElementById('statusMsg');
+    el.textContent = msg;
+    el.style.color = color;
+  }
+
+  async function loadReport() {
+    const oid = document.getElementById('objectIdInput').value.trim();
+    if (!oid) { setStatus('Enter an OBJECTID', '#F5A623'); return; }
+
+    const btn = document.getElementById('loadBtn');
+    btn.disabled = true;
+    setStatus('Querying feature…', 'rgba(255,255,255,0.5)');
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('report').classList.remove('visible');
+    document.getElementById('printBtn').style.display = 'none';
+
+    const queryUrl = `${FEATURE_SERVICE}/query?where=OBJECTID=${oid}&outFields=*&returnGeometry=true&outSR=4326&f=json`;
+
+    try {
+      const res  = await fetch(queryUrl);
+      const data = await res.json();
+
+      if (!data.features || data.features.length === 0) {
+        setStatus(`No feature found for OID ${oid}`, '#E74C3C');
+        document.getElementById('emptyState').style.display = 'block';
+        btn.disabled = false;
+        return;
+      }
+
+      const feat  = data.features[0];
+      const attr  = feat.attributes;
+      const geom  = feat.geometry;
+
+      // ── HEADER ──────────────────────────────
+      document.getElementById('rptAddress').textContent =
+        attr.FULLADDR || `Parcel ${attr.ParcelNumb || attr.ParcelNbr_AssessorDataJoin || 'Unknown'}`;
+      document.getElementById('rptMeta').textContent =
+        `OBJECTID: ${attr.OBJECTID}  ·  Parcel: ${attr.ParcelNbr_AssessorDataJoin || attr.ParcelNumb || 'N/A'}  ·  Report generated: ${new Date().toLocaleString()}`;
+
+      // badges
+      const badges = document.getElementById('rptBadges');
+      badges.innerHTML = '';
+      badges.innerHTML += `<span class="badge badge-info">⬡ ${attr.LandType_Assessor || 'Land Type N/A'}</span>`;
+      if (attr.CONST_YEAR) badges.innerHTML += `<span class="badge badge-info">Built ${attr.CONST_YEAR}</span>`;
+      if (attr.NumberStories) badges.innerHTML += `<span class="badge badge-info">${attr.NumberStories} ${attr.NumberStories==1?'Story':'Stories'}</span>`;
+      badges.innerHTML += fireHazBadge(attr.FireHazardNuisance_Assessor);
+      if (attr.EvacTimeMin) {
+        const evMin = Number(attr.EvacTimeMin);
+        const cls   = evMin < 10 ? 'badge-safe' : evMin < 20 ? 'badge-warn' : 'badge-fire';
+        badges.innerHTML += `<span class="badge ${cls}">🚗 Evac ~${evMin.toFixed(1)} min</span>`;
+      }
+
+      // ── MAP IMAGE via ArcGIS Print Service ──
+      setStatus('Fetching map image…', 'rgba(255,255,255,0.5)');
+      await loadMapImage(geom, attr.OBJECTID);
+
+      // ── PROPERTY ────────────────────────────
+      document.getElementById('fParcel').innerHTML    = fmt(attr.ParcelNbr_AssessorDataJoin || attr.ParcelNumb);
+      document.getElementById('fLandType').innerHTML  = fmt(attr.LandType_Assessor);
+      document.getElementById('fAcreage').innerHTML   = fmtAcre(attr.ACREAGE);
+      document.getElementById('fSlope').innerHTML     = fmt(attr.LandSlope_Assessor);
+      document.getElementById('fLandVal').innerHTML   = fmtCurrency(attr.LAND_VALUE);
+      document.getElementById('fImprVal').innerHTML   = fmtCurrency(attr.IMPR_VALUE);
+
+      // ── STRUCTURE ───────────────────────────
+      document.getElementById('fSqFt').innerHTML    = fmtSqFt(attr.TotalSqFootage_Assessor);
+      document.getElementById('fYear').innerHTML    = fmt(attr.CONST_YEAR);
+      document.getElementById('fStories').innerHTML = fmtNum(attr.NumberStories);
+      document.getElementById('fBeds').innerHTML    = fmtNum(attr.NumBedrooms_Assessor);
+      document.getElementById('fBaths').innerHTML   = fmtNum(attr.NumBathrooms_Assessor, 1);
+      document.getElementById('fBasement').innerHTML = fmt(attr.BasementFlag);
+      document.getElementById('fFloor2').innerHTML  = fmtSqFt(attr.Floor2SqFt_Assessor);
+      document.getElementById('fFloor3').innerHTML  = fmtSqFt(attr.Floor3SqFt_Assessor);
+      document.getElementById('fBsmtSqFt').innerHTML= fmtSqFt(attr.BasementSqFt_Assessor);
+      document.getElementById('fConst').innerHTML   = fmt(attr.ConstructionType_Assessor);
+      document.getElementById('fRoof').innerHTML    = fmt(attr.RoofType_Assessor);
+      document.getElementById('fPool').innerHTML    = fmt(attr.SwimmingPoolType_Assessor);
+      document.getElementById('fHeight').innerHTML  = fmtNum(attr.Height, 1);
+      document.getElementById('fElev').innerHTML    = fmtNum(attr.Elevation, 1);
+      document.getElementById('fArea').innerHTML    = fmtSqFt(attr.Area);
+
+      // ── UTILITIES ───────────────────────────
+      document.getElementById('fWater').innerHTML   = fmt(attr.WaterSource_Assessor);
+      document.getElementById('fElectric').innerHTML= fmt(attr.ElectricSource_Assessor);
+      document.getElementById('fGas').innerHTML     = fmt(attr.NaturalGasSource_Assessor);
+      document.getElementById('fFireHaz').innerHTML = fmt(attr.FireHazardNuisance_Assessor);
+
+      // ── EVACUATION ──────────────────────────
+      const evac = attr.EvacTimeMin;
+      document.getElementById('fEvac').innerHTML =
+        (evac !== null && evac !== undefined) ? `${Number(evac).toFixed(1)} min` : '<span style="color:#bbb">N/A</span>';
+
+      // ── VEGETATION ZONES ────────────────────
+      document.getElementById('vShort5').innerHTML   = vegPill(attr.ShortVeg_5FtZone);
+      document.getElementById('vMed5').innerHTML     = vegPill(attr.MedVeg_5FtZone);
+      document.getElementById('vHigh5').innerHTML    = vegPill(attr.HighVeg_5FtZone);
+      document.getElementById('vShort30').innerHTML  = vegPill(attr.ShortVeg_30FtZone);
+      document.getElementById('vMed30').innerHTML    = vegPill(attr.MedVeg_30FtZone);
+      document.getElementById('vHigh30').innerHTML   = vegPill(attr.HighVeg_30FtZone);
+      document.getElementById('vShort100').innerHTML = vegPill(attr.ShortVeg_100FtZone);
+      document.getElementById('vMed100').innerHTML   = vegPill(attr.MedVeg_100FtZone);
+      document.getElementById('vHigh100').innerHTML  = vegPill(attr.HighVeg_100FtZone);
+
+      // ── FOOTER ──────────────────────────────
+      document.getElementById('rptGenerated').textContent =
+        `Generated: ${new Date().toLocaleString()}`;
+
+      document.getElementById('report').classList.add('visible');
+      document.getElementById('printBtn').style.display = 'inline-block';
+      setStatus('✓ Report ready', '#2ECC71');
+
+    } catch(e) {
+      console.error(e);
+      setStatus('Error loading feature', '#E74C3C');
+      document.getElementById('emptyState').style.display = 'block';
+    }
+
+    btn.disabled = false;
+  }
+
+  async function loadMapImage(geom, oid) {
+    const mapWrap = document.getElementById('rptMapWrap');
+
+    // Build a simple static map via AGOL export image
+    // We compute a bounding box with buffer from the geometry centroid
+    let cx, cy;
+    if (geom.rings) {
+      // Polygon — compute centroid from first ring
+      const ring = geom.rings[0];
+      cx = ring.reduce((s,p) => s+p[0], 0) / ring.length;
+      cy = ring.reduce((s,p) => s+p[1], 0) / ring.length;
+    } else if (geom.x !== undefined) {
+      cx = geom.x; cy = geom.y;
+    } else {
+      mapWrap.innerHTML = '<div class="map-loading">Map not available</div>';
+      return;
+    }
+
+    // Buffer ~0.003 degrees (~300m) for context
+    const buf = 0.003;
+    const bbox = `${cx-buf},${cy-buf},${cx+buf},${cy+buf}`;
+
+    // Use the ArcGIS World Imagery + OpenStreetMap export via static image endpoint
+    const mapServiceUrl =
+      'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?' +
+      `bbox=${bbox}&bboxSR=4326&size=840,280&imageSR=4326&format=png&f=image`;
+
+    mapWrap.innerHTML = '<div class="map-loading">Loading satellite imagery…</div><div class="map-label" id="mapLabel"></div>';
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      mapWrap.innerHTML = '';
+      img.style.width  = '100%';
+      img.style.height = '100%';
+      img.style.objectFit = 'cover';
+      mapWrap.appendChild(img);
+      const lbl = document.createElement('div');
+      lbl.className = 'map-label';
+      lbl.textContent = `Satellite imagery · ±300m context · OBJECTID ${oid}`;
+      mapWrap.appendChild(lbl);
+    };
+    img.onerror = () => {
+      mapWrap.innerHTML = '<div class="map-loading">Map imagery unavailable (CORS restriction in standalone view).<br>Map will render correctly when embedded in Experience Builder.</div><div class="map-label" id="mapLabel"></div>';
+    };
+    img.src = mapServiceUrl;
+  }
+
+  // Allow Enter key to trigger load
+  document.getElementById('objectIdInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') loadReport();
+  });
+
+  // Auto-load from URL parameter — enables Arcade button integration
+  // Usage: SanBern_WildfireReport.html?oid=587
+  const _params = new URLSearchParams(window.location.search);
+  const _autoOid = _params.get('oid');
+  if (_autoOid) {
+    document.getElementById('objectIdInput').value = _autoOid;
+    loadReport();
+  }
+</script>
+</body>
+</html>
