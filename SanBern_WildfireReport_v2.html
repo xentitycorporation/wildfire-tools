@@ -390,7 +390,7 @@
     #report { display: block !important; max-width: 100%; margin: 0; padding: 0; }
     .rpt-header { border-radius: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .rpt-map-wrap { height: 220px; }
-    .badge, .pill, .evac-row, .section-title, .veg-table th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .badge, .pill, .section-title, .veg-table th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .rpt-footer { margin-top: 8px; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
@@ -554,19 +554,6 @@
       </div>
     </div>
 
-    <!-- EVACUATION -->
-    <div class="section">
-      <div class="section-title">Evacuation</div>
-      <div class="evac-row">
-        <div class="evac-icon">🚗</div>
-        <div>
-          <div class="evac-label">Estimated Evacuation Time</div>
-          <div class="evac-value" id="fEvac">— min</div>
-          <div class="evac-note">Modeled estimate from building footprint centroid to nearest safe egress route</div>
-        </div>
-      </div>
-    </div>
-
     <!-- VEGETATION ZONES -->
     <div class="section">
       <div class="section-title">Defensible Space — Vegetation Density by Zone</div>
@@ -704,15 +691,10 @@
       if (attr.CONST_YEAR) badges.innerHTML += `<span class="badge badge-info">Built ${attr.CONST_YEAR}</span>`;
       if (attr.NumberStories) badges.innerHTML += `<span class="badge badge-info">${attr.NumberStories} ${attr.NumberStories==1?'Story':'Stories'}</span>`;
       badges.innerHTML += fireHazBadge(attr.FireHazardNuisance_Assessor);
-      if (attr.EvacTimeMin) {
-        const evMin = Number(attr.EvacTimeMin);
-        const cls   = evMin < 10 ? 'badge-safe' : evMin < 20 ? 'badge-warn' : 'badge-fire';
-        badges.innerHTML += `<span class="badge ${cls}">🚗 Evac ~${evMin.toFixed(1)} min</span>`;
-      }
 
       // ── MAP IMAGE via ArcGIS Print Service ──
       setStatus('Fetching map image…', 'rgba(255,255,255,0.5)');
-      await loadMapImage(geom, attr.OBJECTID);
+      await loadMapImage(geom, attr.FULLADDR || attr.ParcelNbr_AssessorDataJoin || 'Property');
 
       // ── PROPERTY ────────────────────────────
       document.getElementById('fParcel').innerHTML    = fmt(attr.ParcelNbr_AssessorDataJoin || attr.ParcelNumb);
@@ -745,11 +727,6 @@
       document.getElementById('fGas').innerHTML     = fmt(attr.NaturalGasSource_Assessor);
       document.getElementById('fFireHaz').innerHTML = fmt(attr.FireHazardNuisance_Assessor);
 
-      // ── EVACUATION ──────────────────────────
-      const evac = attr.EvacTimeMin;
-      document.getElementById('fEvac').innerHTML =
-        (evac !== null && evac !== undefined) ? `${Number(evac).toFixed(1)} min` : '<span style="color:#bbb">N/A</span>';
-
       // ── VEGETATION ZONES ────────────────────
       document.getElementById('vShort5').innerHTML   = vegPill(attr.ShortVeg_5FtZone);
       document.getElementById('vMed5').innerHTML     = vegPill(attr.MedVeg_5FtZone);
@@ -778,14 +755,12 @@
     btn.disabled = false;
   }
 
-  async function loadMapImage(geom, oid) {
+  async function loadMapImage(geom, addr) {
     const mapWrap = document.getElementById('rptMapWrap');
 
-    // Build a simple static map via AGOL export image
-    // We compute a bounding box with buffer from the geometry centroid
+    // Compute centroid from polygon rings
     let cx, cy;
     if (geom.rings) {
-      // Polygon — compute centroid from first ring
       const ring = geom.rings[0];
       cx = ring.reduce((s,p) => s+p[0], 0) / ring.length;
       cy = ring.reduce((s,p) => s+p[1], 0) / ring.length;
@@ -796,34 +771,124 @@
       return;
     }
 
-    // Buffer ~0.003 degrees (~300m) for context
-    const buf = 0.003;
-    const bbox = `${cx-buf},${cy-buf},${cx+buf},${cy+buf}`;
+    mapWrap.innerHTML = '<div class="map-loading">Loading map with parcel overlay…</div>';
 
-    // Use the ArcGIS World Imagery + OpenStreetMap export via static image endpoint
-    const mapServiceUrl =
-      'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?' +
-      `bbox=${bbox}&bboxSR=4326&size=840,280&imageSR=4326&format=png&f=image`;
+    // ── Tighter buffer: ~0.0008 degrees ≈ 80m ──────────────────────
+    const buf = 0.0008;
+    const xmin = cx - buf, ymin = cy - buf;
+    const xmax = cx + buf, ymax = cy + buf;
 
-    mapWrap.innerHTML = '<div class="map-loading">Loading satellite imagery…</div><div class="map-label" id="mapLabel"></div>';
+    // ── Build Web Map JSON for AGOL print service ───────────────────
+    // Layers: World Imagery basemap + Building Footprints feature layer
+    // Selected feature gets a cyan highlight; all others render in default grey
+    const webMapJson = {
+      mapOptions: {
+        extent: { xmin, ymin, xmax, ymax, spatialReference: { wkid: 4326 } },
+        spatialReference: { wkid: 102100 }
+      },
+      operationalLayers: [
+        {
+          // Building Footprints layer — all features in default grey
+          url: 'https://services6.arcgis.com/BStAUXLYRr0TgXhT/arcgis/rest/services/BuildingFootprints_SanBernCounty_Wildfire3Zones/FeatureServer/2',
+          opacity: 1,
+          minScale: 0,
+          maxScale: 0,
+          layerDefinition: {
+            drawingInfo: {
+              renderer: {
+                type: 'simple',
+                symbol: {
+                  type: 'esriSFS',
+                  style: 'esriSFSSolid',
+                  color: [180, 180, 180, 80],
+                  outline: { type: 'esriSLS', style: 'esriSLSSolid', color: [80, 80, 80, 200], width: 1 }
+                }
+              }
+            }
+          }
+        }
+      ],
+      baseMap: {
+        baseMapLayers: [
+          {
+            url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer',
+            opacity: 1
+          }
+        ],
+        title: 'World Imagery'
+      },
+      exportOptions: {
+        outputSize: [840, 300],
+        dpi: 96
+      }
+    };
 
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
+    // ── Call AGOL Export Web Map print service ──────────────────────
+    const printUrl = 'https://utility.arcgisonline.com/arcgis/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute';
+    const params = new URLSearchParams({
+      Web_Map_as_JSON: JSON.stringify(webMapJson),
+      Format: 'PNG32',
+      Layout_Template: 'MAP_ONLY',
+      f: 'json'
+    });
+
+    try {
+      const res  = await fetch(printUrl, { method: 'POST', body: params });
+      const data = await res.json();
+
+      // Extract image URL from result
+      const imgUrl = data?.results?.[0]?.value?.url;
+
+      if (!imgUrl) {
+        throw new Error('No image URL in print service response');
+      }
+
+      // ── Render the image ──────────────────────────────────────────
       mapWrap.innerHTML = '';
-      img.style.width  = '100%';
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.style.width = '100%';
       img.style.height = '100%';
       img.style.objectFit = 'cover';
-      mapWrap.appendChild(img);
-      const lbl = document.createElement('div');
-      lbl.className = 'map-label';
-      lbl.textContent = `Satellite imagery · ±300m context · OBJECTID ${oid}`;
-      mapWrap.appendChild(lbl);
-    };
-    img.onerror = () => {
-      mapWrap.innerHTML = '<div class="map-loading">Map imagery unavailable (CORS restriction in standalone view).<br>Map will render correctly when embedded in Experience Builder.</div><div class="map-label" id="mapLabel"></div>';
-    };
-    img.src = mapServiceUrl;
+      img.style.display = 'block';
+
+      img.onload = () => {
+        mapWrap.appendChild(img);
+        const lbl = document.createElement('div');
+        lbl.className = 'map-label';
+        lbl.textContent = `Satellite imagery · ±80m context · ${addr}`;
+        mapWrap.appendChild(lbl);
+      };
+      img.onerror = () => {
+        mapWrap.innerHTML = '<div class="map-loading">Map imagery unavailable.</div>';
+      };
+      img.src = imgUrl;
+
+    } catch(e) {
+      // Fallback to World Imagery direct export if print service fails
+      console.warn('Print service failed, falling back to direct imagery:', e);
+      const fallbackUrl =
+        'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?' +
+        `bbox=${xmin},${ymin},${xmax},${ymax}&bboxSR=4326&size=840,300&imageSR=4326&format=png&f=image`;
+
+      mapWrap.innerHTML = '';
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.style.width = '100%';
+      img.style.height = '100%';
+      img.style.objectFit = 'cover';
+      img.onload = () => {
+        mapWrap.appendChild(img);
+        const lbl = document.createElement('div');
+        lbl.className = 'map-label';
+        lbl.textContent = `Satellite imagery · ±80m context · ${addr}`;
+        mapWrap.appendChild(lbl);
+      };
+      img.onerror = () => {
+        mapWrap.innerHTML = '<div class="map-loading">Map imagery unavailable.</div>';
+      };
+      img.src = fallbackUrl;
+    }
   }
 
   // Allow Enter key to trigger load
